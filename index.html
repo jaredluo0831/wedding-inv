@@ -556,6 +556,13 @@
     statusEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }
 
+  function showStatusHTML(html){
+    const statusEl = document.getElementById('status-msg');
+    statusEl.innerHTML = html;
+    statusEl.classList.add('show');
+    statusEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+
   // 不完全依賴瀏覽器原生的驗證提示（有些預覽環境不會顯示），
   // 缺漏欄位時一定會在畫面上用文字告訴賓客缺什麼。
   function validate(){
@@ -602,7 +609,11 @@
       hiddenForm.submit();
 
       setTimeout(function(){
-        showStatus('已收到您的回覆，感謝您的祝福與參與！');
+        if (data.attend === '出席') {
+          window.location.href = 'thank-you.html';
+        } else {
+          showStatusHTML('<strong>新人夫妻不滿意你的決定！但還是謝了！</strong>');
+        }
       }, 500);
     } catch (err) {
       showStatus('送出時發生問題（' + (err && err.message ? err.message : '未知錯誤') + '），請改用下方 LINE 或 Email 通知新人。');
