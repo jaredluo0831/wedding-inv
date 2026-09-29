@@ -467,6 +467,21 @@
       </p>
       <div class="status-msg" id="status-msg"></div>
     </form>
+
+    <!-- 隱藏的送出用表單／iframe：用傳統表單送出（而非 fetch）寫入試算表，
+         避免部分瀏覽器（例如 iOS Safari 的「防止跨網站追蹤」或內容攔截外掛）
+         擋掉 fetch 造成「Load failed」而讓賓客回覆送不出去。 -->
+    <iframe name="rsvp-target" style="display:none" aria-hidden="true" tabindex="-1"></iframe>
+    <form id="rsvp-hidden-form" method="POST" target="rsvp-target" style="display:none" aria-hidden="true">
+      <input type="hidden" name="name">
+      <input type="hidden" name="attend">
+      <input type="hidden" name="count">
+      <input type="hidden" name="diet">
+      <input type="hidden" name="allergy">
+      <input type="hidden" name="phone">
+      <input type="hidden" name="email">
+      <input type="hidden" name="message">
+    </form>
   </section>
 
   <div class="fret on-champagne"></div>
@@ -561,7 +576,12 @@
   }
 
   // 主要送出方式：寫入 Google 試算表
-  async function submitRSVP(){
+  // 改用「隱藏表單 + 隱藏 iframe」的傳統送出方式（而非 fetch）。
+  // 原因：部分瀏覽器／環境（常見於 iOS Safari 的「防止跨網站追蹤」、
+  // 內容攔截外掛、部分公司或學校網路）會擋掉對 script.google.com 的 fetch 請求，
+  // 導致賓客端出現「Load failed」而回覆送不出去；改用一般網頁表單送出的方式
+  // 幾乎不會被這類機制攔截，可靠度高很多。
+  function submitRSVP(){
     try {
       if (!validate()) return;
 
@@ -572,13 +592,18 @@
 
       showStatus('送出中，請稍候…');
 
-      await fetch(SHEET_WEB_APP_URL, {
-        method: 'POST',
-        mode: 'no-cors',
-        body: new URLSearchParams(collectData())
+      const data = collectData();
+      const hiddenForm = document.getElementById('rsvp-hidden-form');
+      hiddenForm.action = SHEET_WEB_APP_URL;
+      Object.keys(data).forEach(function(key){
+        const input = hiddenForm.querySelector('[name="' + key + '"]');
+        if (input) input.value = data[key];
       });
+      hiddenForm.submit();
 
-      showStatus('已收到您的回覆，感謝您的祝福與參與！');
+      setTimeout(function(){
+        showStatus('已收到您的回覆，感謝您的祝福與參與！');
+      }, 500);
     } catch (err) {
       showStatus('送出時發生問題（' + (err && err.message ? err.message : '未知錯誤') + '），請改用下方 LINE 或 Email 通知新人。');
     }
