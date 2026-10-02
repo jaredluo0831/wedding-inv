@@ -580,12 +580,15 @@
     return true;
   }
 
-  // 主要送出方式：寫入 Google 試算表
-  // 改用「隱藏表單 + 隱藏 iframe」的傳統送出方式（而非 fetch）。
-  // 原因：部分瀏覽器／環境（常見於 iOS Safari 的「防止跨網站追蹤」、
-  // 內容攔截外掛、部分公司或學校網路）會擋掉對 script.google.com 的 fetch 請求，
-  // 導致賓客端出現「Load failed」而回覆送不出去；改用一般網頁表單送出的方式
-  // 幾乎不會被這類機制攔截，可靠度高很多。
+  // 送出成功後的畫面處理：出席 -> 跳轉感謝頁；不克出席 -> 原頁面顯示粗體提示
+  function afterSubmit(data){
+    if (data.attend === '出席') {
+      window.location.href = 'thank-you.html';
+    } else {
+      showStatusHTML('<strong>新人夫妻不滿意你的決定！但還是謝了！</strong>');
+    }
+  }
+
   function submitRSVP(){
     try {
       if (!validate()) return;
@@ -598,21 +601,47 @@
       showStatus('送出中，請稍候…');
 
       const data = collectData();
+      var sent = false;
+
+      // 主要送出方式：navigator.sendBeacon。
+      // 瀏覽器會保證這筆資料確實送出，即使送出後立刻跳轉頁面或關閉分頁也不會被中斷——
+      // 這能徹底解決「出席」選項送出後跳轉到感謝頁太快、資料來不及送達 Google 試算表的問題
+      // （舊版用固定等待時間再跳轉，在 Google Apps Script 回應較慢時會有機率遺漏資料）。
+      if (navigator.sendBeacon) {
+        try {
+          var payload = new URLSearchParams(data).toString();
+          var blob = new Blob([payload], { type: 'application/x-www-form-urlencoded' });
+          sent = navigator.sendBeacon(SHEET_WEB_APP_URL, blob);
+        } catch (beaconErr) {
+          sent = false;
+        }
+      }
+
+      if (sent) {
+        afterSubmit(data);
+        return;
+      }
+
+      // 備援方式（極少數不支援 sendBeacon 的瀏覽器，或 sendBeacon 排入失敗時）：
+      // 改用隱藏表單＋隱藏 iframe 送出，並且等待 iframe 真正載入完成（代表已收到回應）才繼續，
+      // 不是固定等待時間，避免回應較慢時又重蹈覆轍。
       const hiddenForm = document.getElementById('rsvp-hidden-form');
+      const hiddenIframe = document.getElementsByName('rsvp-target')[0];
       hiddenForm.action = SHEET_WEB_APP_URL;
       Object.keys(data).forEach(function(key){
         const input = hiddenForm.querySelector('[name="' + key + '"]');
         if (input) input.value = data[key];
       });
-      hiddenForm.submit();
 
-      setTimeout(function(){
-        if (data.attend === '出席') {
-          window.location.href = 'thank-you.html';
-        } else {
-          showStatusHTML('<strong>新人夫妻不滿意你的決定！但還是謝了！</strong>');
-        }
-      }, 500);
+      var proceeded = false;
+      var proceed = function(){
+        if (proceeded) return;
+        proceeded = true;
+        afterSubmit(data);
+      };
+      hiddenIframe.addEventListener('load', proceed, { once: true });
+      setTimeout(proceed, 4000); // 保險：最多等 4 秒，避免 load 事件沒觸發時卡住
+      hiddenForm.submit();
     } catch (err) {
       showStatus('送出時發生問題（' + (err && err.message ? err.message : '未知錯誤') + '），請改用下方 LINE 或 Email 通知新人。');
     }
